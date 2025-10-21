@@ -496,7 +496,7 @@ def build_budget_chart(service_name: str, budget_df: pd.DataFrame, budget_map: d
     colors_bar = ["#4a90e2", "#4aab6d", "#ff7f50"]
     ax.bar(labels, totals, color=colors_bar)
     ax.set_title(f"Budget (Out-years) — {strip_service_code(service_name)}", fontsize=12, pad=8)
-    ax.set_ylabel("Amount")
+    ax.set_ylabel("Amount in $Mil")
     ax.set_xlabel("Year")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
