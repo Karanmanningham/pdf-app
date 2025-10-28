@@ -489,7 +489,7 @@ def build_budget_chart(service_name: str, budget_df: pd.DataFrame, budget_map: d
         float(rows[c2728].sum()),
         float(rows[c2829].sum()),
     ]
-    labels = ["2026/27 Final Budget", "2027/28 Final Budget", "2028/29 Final Budget"]
+    labels = ["2026-27 Final Budget", "2027-28 Final Budget", "2028-29 Final Budget"]
 
     # NOTE: Graph colors remain independent (as requested)
     fig, ax = plt.subplots(figsize=(8.0, 3.8))
@@ -516,9 +516,9 @@ def build_budget_chart(service_name: str, budget_df: pd.DataFrame, budget_map: d
             return str(x)
 
     summary_data = [
-        [Paragraph("<b>2026/27 Final Budget</b>", styles["FieldLabel"]), Paragraph(fmt_currency(totals[0]), styles["FieldValue"])],
-        [Paragraph("<b>2027/28 Final Budget</b>", styles["FieldLabel"]), Paragraph(fmt_currency(totals[1]), styles["FieldValue"])],
-        [Paragraph("<b>2028/29 Final Budget</b>", styles["FieldLabel"]), Paragraph(fmt_currency(totals[2]), styles["FieldValue"])],
+        [Paragraph("<b>2026-27 Final Budget</b>", styles["FieldLabel"]), Paragraph(fmt_currency(totals[0]), styles["FieldValue"])],
+        [Paragraph("<b>2027-28 Final Budget</b>", styles["FieldLabel"]), Paragraph(fmt_currency(totals[1]), styles["FieldValue"])],
+        [Paragraph("<b>2028-29 Final Budget</b>", styles["FieldLabel"]), Paragraph(fmt_currency(totals[2]), styles["FieldValue"])],
     ]
     summary_table = Table(summary_data, colWidths=[200, None])
     summary_table.setStyle(TableStyle([
@@ -536,14 +536,14 @@ def build_budget_chart(service_name: str, budget_df: pd.DataFrame, budget_map: d
 # -----------------------------------------------------------
 col1, col2 = st.columns(2)
 with col1:
-    actions_file = st.file_uploader("Upload Actions file (CSV/XLSX)", type=["csv","xlsx","xls"], accept_multiple_files=False)
+    actions_file = st.file_uploader("Upload Year 2 Actions file (CSV/XLSX)", type=["csv","xlsx","xls"], accept_multiple_files=False)
     details_file = st.file_uploader("Upload Service Details file (CSV/XLSX)", type=["csv","xlsx","xls"], accept_multiple_files=False)
 with col2:
     estab_file = st.file_uploader("Upload Establishment file (XLSX/CSV)", type=["csv","xlsx","xls"], accept_multiple_files=False)
     logo_file  = st.file_uploader("Optional: Upload Logo (PNG/JPG)", type=["png","jpg","jpeg"], accept_multiple_files=False)
 
 # Budget uploader
-st.subheader("Budget Dashboard (Preview)")
+st.subheader("Budget (Preview)")
 budget_file = st.file_uploader("Upload Budget file (CSV/XLSX) — reads from 4th row", type=["csv","xlsx","xls"], accept_multiple_files=False)
 
 st.divider()
@@ -670,7 +670,7 @@ if core_files_ready:
                     float(rows_prev[budget_map["budget_2728"]].sum()),
                     float(rows_prev[budget_map["budget_2829"]].sum()),
                 ]
-                labels = ["2026/27 Final Budget", "2027/28 Final Budget", "2028/29 Final Budget"]
+                labels = ["2026-27 Final Budget", "2027-28 Final Budget", "2028-29 Final Budget"]
                 fig, ax = plt.subplots(figsize=(6, 4))
                 # NOTE: Graph colors remain independent (as requested)
                 ax.bar(labels, values, color=["#4a90e2", "#4aab6d", "#ff7f50"])
