@@ -7,7 +7,6 @@ import zipfile
 import json
 import ast
 from datetime import datetime
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -35,7 +34,7 @@ from xml.sax.saxutils import escape
 # App config / constants
 # --------------------------------------------------
 YEAR_STR_DEFAULT = "2026–2027"  # Default year label (display)
-CARDS_PER_PAGE_DEFAULT = 0      # 0 = continuous
+CARDS_PER_PAGE_DEFAULT = 0  # 0 = continuous
 TEXT_ON_PRIMARY = colors.white
 # Page width minus BOTH side margins (10 mm each)
 CONTENT_WIDTH_PTS = A4[0] - (20 * mm)
@@ -114,8 +113,8 @@ EXPECTED_ESTAB = {
     "position_type": ["Position Type"],
     "directorate": ["Directorate"],
     "directorate_desc": ["Directorate Desc"],
-    "service_unit": ["Service Unit", "Service", "Service Name"],
-    "service_unit_desc": ["Service Unit Desc", "Service Desc"],
+    "service_unit": ["Service Unit", "Service", "Service Name", "Team"],
+    "service_unit_desc": ["Service Unit Desc", "Service Desc", "Team Desc"],
     "team": ["Team"],
     "team_desc": ["Team Desc"],
     "position_class": ["Position Classification", "Classification", "Band"],
@@ -135,6 +134,29 @@ EXPECTED_BUDGET = {
     "account_group_desc": ["Account Group Description"],
     "account_type_desc": ["Account Type Description"],
 }
+# NEW: KPIs file expected columns
+EXPECTED_KPIS = {
+    # For alignment to chosen service(s)
+    "service": [
+        "Service", "Service Name", "Service Unit", "Service unit",
+        "Service Team", "Team",
+        "Service Area"  # <-- added to support your file
+    ],
+    "sub_service": ["Sub Service", "Sub-Service", "SubService", "Subservice", "Team", "Function"],
+    # KPI attributes
+    "kpi_name": ["KPI Name", "Name"],
+    "kpi_category": ["KPI Category", "Category"],
+    "unit": ["Unit of Measure", "Unit", "Measure"],
+    "frequency": ["Reporting Frequency", "Frequency"],
+    "target_2627": ["Target 2026-27", "2026-27 Target", "Target 26-27"],
+    "target": ["Target"],  # Generic/longer-term target if provided
+    "links": ["Links", "Link", "URL"],
+    "notes": ["Notes", "Comments"],
+    "smart": ["SMART Checklist", "SMART"],
+    "officer": ["Reporting Officer", "Owner", "Lead"],
+    # Optional confirmation column to include only approved KPIs
+    "confirm": ["Confirm KPI", "Confirmed", "Include", "Publish"]
+}
 
 # --------------------------------------------------
 # Helpers
@@ -143,15 +165,17 @@ def esc_text(s: str) -> str:
     """Escape &, <, > and convert newlines to <br/> for safe Paragraph rendering."""
     return escape(str(s or "")).replace("\n", "<br/>")
 
+
 def safe_filename(name: str, max_len: int = 120) -> str:
     """Make a filename-safe version of a service name."""
     if not name:
         name = "Unknown Service"
-    name = re.sub(r'[\\<>:"/\\\n\?\*\x00-\x1F]', "", name)
+    name = re.sub(r'[\\<>:"/\n\?\*\x00-\x1F]', "", name)
     name = re.sub(r"\s+", " ", name).strip()
     if len(name) > max_len:
         name = name[:max_len].rstrip()
     return name
+
 
 _seen_filenames = {}
 def unique_filename(base_name: str) -> str:
@@ -160,12 +184,14 @@ def unique_filename(base_name: str) -> str:
     _seen_filenames[base_name] = count
     return base_name if count == 1 else f"{base_name} ({count})"
 
+
 def normalize_service_key(s: str) -> str:
     return (str(s or "")
             .replace("\u00A0", " ")  # non‑breaking space
             .replace("\t", " ")
             .strip()
             .lower())
+
 
 def strip_service_code(s: str) -> str:
     """
@@ -175,6 +201,7 @@ def strip_service_code(s: str) -> str:
     text = str(s or "").replace("\u00A0", " ").replace("\t", " ").strip()
     text = re.sub(r"^\s*[A-Za-z0-9]+(?:[A-Za-z0-9]*)\s*[–—-]\s*", "", text)
     return text.strip()
+
 
 def read_table(file):
     """Read uploaded CSV or Excel into a DataFrame."""
@@ -186,6 +213,7 @@ def read_table(file):
     else:
         raise ValueError(f"Unsupported file type: {file.name}. Use .csv or .xlsx/.xls")
 
+
 def read_budget_table(file):
     """Read Budget file starting from the 4th row (skip first 3 rows)."""
     filename = file.name.lower()
@@ -195,6 +223,7 @@ def read_budget_table(file):
         return pd.read_excel(file, sheet_name=0, skiprows=3, engine="openpyxl")
     else:
         raise ValueError(f"Unsupported file type: {file.name}. Use .csv or .xlsx/.xls")
+
 
 def build_column_map(df, expected_map):
     """Map expected logical keys to actual columns in df (case/space-insensitive)."""
@@ -215,11 +244,13 @@ def build_column_map(df, expected_map):
             col_map[key] = found
     return col_map, missing
 
+
 def get_downloads_dir() -> str:
     """Return ~/Downloads; create it if missing."""
     downloads = os.path.join(os.path.expanduser("~"), "Downloads")
     os.makedirs(downloads, exist_ok=True)
     return downloads
+
 
 def hex_to_reportlab_color(hex_str: str) -> colors.Color:
     """Convert '#RRGGBB' to reportlab Color. Safe default if invalid."""
@@ -230,6 +261,7 @@ def hex_to_reportlab_color(hex_str: str) -> colors.Color:
         return colors.HexColor(hs)
     except Exception:
         return colors.HexColor("#4aab6d")
+
 
 # -------- NEW: Robust Action Type formatter --------
 def format_action_type(value) -> str:
@@ -258,7 +290,7 @@ def format_action_type(value) -> str:
         if ',' not in s and ';' not in s:
             return s
         # Otherwise split on commas/semicolons
-        parts = [p.strip().strip('"').strip("'") for p in re.split(r"[,;]", s) if p.strip()]
+        parts = [p.strip().strip('"').strip("'") for p in re.split(r"[;,]", s) if p.strip()]
         return ", ".join(parts)
 
     # Try JSON list first
@@ -282,6 +314,7 @@ def format_action_type(value) -> str:
     parts = [p.strip().strip('"').strip("'") for p in s2.split(',') if p.strip()]
     return ", ".join(parts) if parts else s
 
+
 # -------- NEW: Early normaliser called right after reading Actions --------
 def _normalize_action_type_early(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -301,6 +334,20 @@ def _normalize_action_type_early(df: pd.DataFrame) -> pd.DataFrame:
     except Exception:
         pass
     return df
+
+
+# --- NEW: KPI text cell cleaner ---
+def _clean_kpi_text_cell(x):
+    """
+    For KPI uploads: remove double quotes (") and square brackets ([ and ]) from text cells.
+    Leave numbers, dates, and other types as-is.
+    """
+    if pd.isna(x):
+        return x
+    if isinstance(x, str):
+        return x.replace('"', '').replace('[', '').replace(']', '')
+    return x
+
 
 # --------------------------------------------------
 # UI header builders
@@ -325,6 +372,7 @@ def build_header_generic(title_html: str, subtitle_html: str, bg_color, logo_byt
     ]))
     return header_table
 
+
 def build_header_details(service_name: str, logo_bytes: bytes or None, year_label: str, header_color):
     return build_header_generic(
         f"<b>Service Details</b>: <b>{esc_text(service_name)}</b>",
@@ -332,6 +380,7 @@ def build_header_details(service_name: str, logo_bytes: bytes or None, year_labe
         header_color,
         logo_bytes
     )
+
 
 def build_header_workforce(service_name: str, logo_bytes: bytes or None, year_label: str, header_color):
     return build_header_generic(
@@ -341,6 +390,7 @@ def build_header_workforce(service_name: str, logo_bytes: bytes or None, year_la
         logo_bytes
     )
 
+
 def build_header_actions(service_name: str, logo_bytes: bytes or None, year_label: str, header_color):
     return build_header_generic(
         f"<b>Service Action Plan</b>: <b>{esc_text(service_name)}</b>",
@@ -348,6 +398,17 @@ def build_header_actions(service_name: str, logo_bytes: bytes or None, year_labe
         header_color,
         logo_bytes
     )
+
+
+# NEW: KPI header
+def build_header_kpis(service_name: str, logo_bytes: bytes or None, year_label: str, header_color):
+    return build_header_generic(
+        f"<b>Service KPI Plan</b>: <b>{esc_text(service_name)}</b>",
+        f"Key performance indicators \n {esc_text(year_label)}",
+        header_color,
+        logo_bytes
+    )
+
 
 def build_header_budget(service_name: str, logo_bytes: bytes or None, year_label: str, header_color):
     return build_header_generic(
@@ -434,6 +495,7 @@ class CoverFullPage(Flowable):
         # Frame origin
         x0 = 0
         y0 = 0
+
         # Layout constants
         banner_pad = 20
         # allow the banner to be at most 70% of the frame height (guard against tiny frames)
@@ -445,6 +507,7 @@ class CoverFullPage(Flowable):
         banner_x = x0
         banner_y = y0
         banner_w = self.width
+
         c.saveState()
         c.setFillColor(self.header_color)
         c.rect(banner_x, banner_y, banner_w, banner_h, stroke=0, fill=1)
@@ -485,9 +548,9 @@ class CoverFullPage(Flowable):
             w, h = p.wrap(left_w, max_text_h)
             dims.append((w, h))
             total_h += h
-
         shrink = min(1.0, max_text_h / total_h) if total_h > 0 else 1.0
         draw_start_y = text_y + max(0, max_text_h - total_h * shrink)  # bottom-align
+
         cur_y = draw_start_y
         for p, (_w, h) in zip(paras, dims):
             ph = h * shrink
@@ -515,6 +578,7 @@ class CoverFullPage(Flowable):
                 draw_h = orig_h * scale
                 draw_x = target_x + (target_w - draw_w) / 2.0
                 draw_y = target_y + (target_h - draw_h) / 2.0
+
                 c.saveState()
                 p = c.beginPath()
                 p.rect(target_x, target_y, target_w, target_h)
@@ -525,6 +589,7 @@ class CoverFullPage(Flowable):
                 c.restoreState()
             except Exception:
                 pass
+
 
 def build_cover_page(
     service_name: str,
@@ -551,6 +616,7 @@ def build_cover_page(
         left_margin=10*mm,
         right_margin=10*mm
     )]
+
 
 def build_end_page(service_name: str, year_label: str, header_color, logo_bytes: bytes or None):
     """Simple closing page."""
@@ -597,9 +663,66 @@ def create_action_card(service, sub_service, action_name, action_desc, person, a
     ]))
     return table
 
+
+# NEW: KPI card builder
+def create_kpi_card(
+    service,
+    sub_service,
+    kpi_name,
+    kpi_category,
+    unit,
+    frequency,
+    target_2627,
+    target,
+    links,
+    notes,
+    smart,
+    officer,
+    header_color
+):
+    header_text = Paragraph(f"<b>{esc_text(sub_service)}</b>", styles["CardHeaderText"])
+
+    def fmt_links(val: str) -> str:
+        # Render as plain text; leave users free to paste multiple URLs separated by comma/new line
+        return esc_text(val)
+
+    rows = [
+        [Paragraph("<b>KPI Name:</b>", styles["FieldLabel"]), Paragraph(esc_text(kpi_name), styles["FieldValue"])],
+        [Paragraph("<b>KPI Category:</b>", styles["FieldLabel"]), Paragraph(esc_text(kpi_category), styles["FieldValue"])],
+        [Paragraph("<b>Unit of Measure:</b>", styles["FieldLabel"]), Paragraph(esc_text(unit), styles["FieldValue"])],
+        [Paragraph("<b>Reporting Frequency:</b>", styles["FieldLabel"]), Paragraph(esc_text(frequency), styles["FieldValue"])],
+        [Paragraph("<b>Target 2026-27:</b>", styles["FieldLabel"]), Paragraph(esc_text(target_2627), styles["FieldValue"])],
+        [Paragraph("<b>Target (overall):</b>", styles["FieldLabel"]), Paragraph(esc_text(target), styles["FieldValue"])],
+        [Paragraph("<b>Links:</b>", styles["FieldLabel"]), Paragraph(fmt_links(links), styles["FieldValue"])],
+        [Paragraph("<b>Notes:</b>", styles["FieldLabel"]), Paragraph(esc_text(notes), styles["FieldValue"])],
+        [Paragraph("<b>SMART Checklist:</b>", styles["FieldLabel"]), Paragraph(esc_text(smart), styles["FieldValue"])],
+        [Paragraph("<b>Reporting Officer:</b>", styles["FieldLabel"]), Paragraph(esc_text(officer), styles["FieldValue"])],
+    ]
+    data = [[header_text, ""]] + rows
+    table = Table(data, colWidths=[160, None])
+    table.setStyle(TableStyle([
+        ("SPAN", (0, 0), (1, 0)),
+        ("BACKGROUND", (0, 0), (-1, 0), header_color),
+        ("TEXTCOLOR", (0, 0), (-1, 0), TEXT_ON_PRIMARY),
+        ("LEFTPADDING", (0, 0), (-1, 0), 10),
+        ("RIGHTPADDING", (0, 0), (-1, 0), 10),
+        ("TOPPADDING", (0, 0), (-1, 0), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
+        ("GRID", (0, 1), (-1, -1), 0.25, colors.Color(0.85, 0.85, 0.85)),
+        ("LEFTPADDING", (0, 1), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 1), (-1, -1), 10),
+        ("TOPPADDING", (0, 1), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return table
+
+
 def service_details_card(row, col_map, header_color):
     def v(key):
         return esc_text(row[col_map[key]]) if key in col_map else ""
+
     sections = [
         ("Service Details", []),
         ("Leadership", [("Service Lead", "service_lead"), ("Manager", "manager"), ("Director", "director")]),
@@ -613,6 +736,7 @@ def service_details_card(row, col_map, header_color):
         ("Challenges & Opportunities", [("Our Challenges", "challenges"), ("Our Opportunities", "opportunities")]),
         ("Legislation / Policies / Frameworks / Contracts", [("Legislation / Policies / Frameworks / Contracts", "legislation")]),
     ]
+
     data = []
     section_rows = []
     for section_title, fields in sections:
@@ -623,6 +747,7 @@ def service_details_card(row, col_map, header_color):
                 Paragraph(f"<b>{esc_text(label)}</b>", styles["FieldLabel"]),
                 Paragraph(v(key), styles["FieldValue"])
             ])
+
     table = Table(data, colWidths=[170, None])
     style_cmds = [
         ("SPAN", (0, 0), (1, 0)),
@@ -651,6 +776,7 @@ def service_details_card(row, col_map, header_color):
     table.setStyle(TableStyle(style_cmds))
     return table
 
+
 def extract_band_number(class_str: str):
     if not class_str:
         return None
@@ -662,13 +788,14 @@ def extract_band_number(class_str: str):
             return None
     return None
 
+
 def build_workforce_band_chart(service_name: str, estab_df: pd.DataFrame, estab_map: dict, metric: str):
     """
     Workforce chart grouped by Position Classification with simple normalization:
-      - 'MAN6', 'man 6', 'band6', 'Band 6' => 'Band 6'
-      - 'MAN7', 'band 7', etc.            => 'Band 7'
-      - If SEO / SO (as standalone codes) => keep as 'SEO' / 'SO'
-      - Otherwise keep the original classification text (trimmed)
+    - 'MAN6', 'man 6', 'band6', 'Band 6' => 'Band 6'
+    - 'MAN7', 'band 7', etc. => 'Band 7'
+    - If SEO / SO (as standalone codes) => keep as 'SEO' / 'SO'
+    - Otherwise keep the original classification text (trimmed)
     Aggregation: Positions count OR sum of FTE (based on 'metric').
     """
     # --- 1) Filter rows belonging to this service ---
@@ -677,6 +804,10 @@ def build_workforce_band_chart(service_name: str, estab_df: pd.DataFrame, estab_
         svc_candidates.append(estab_map["service_unit"])
     if "service_unit_desc" in estab_map:
         svc_candidates.append(estab_map["service_unit_desc"])
+    if "team" in estab_map:
+        svc_candidates.append(estab_map["team"])
+    if "team_desc" in estab_map:
+        svc_candidates.append(estab_map["team_desc"])
     if not svc_candidates:
         return None, Paragraph("No matching service columns found in Establishment file.", styles["FieldValue"])
 
@@ -706,35 +837,29 @@ def build_workforce_band_chart(service_name: str, estab_df: pd.DataFrame, estab_
     def normalize_class_label(val: str) -> str:
         """
         Map MAN6/MAN 6/BAND 6/etc. -> 'Band 6'
-        Map MAN7/BAND 7/etc.       -> 'Band 7'
+        Map MAN7/BAND 7/etc. -> 'Band 7'
         Keep SEO/SO as-is (uppercase)
         Else return original trimmed text.
         """
-        raw = str(val or "").strip()
+        raw = str(val or "").trim() if hasattr(str, "trim") else str(val or "").strip()
         if not raw:
             return "Unknown"
-
         low = raw.lower()
         low_nospace = re.sub(r"\s+", "", low)
-
         # Detect MANx or BANDx patterns (e.g., man6, man 6, band7, band 7, etc.)
         m = re.search(r"\b(?:man|band)\s*([0-9]{1,2})\b", low)
         if m:
             return f"Band {int(m.group(1))}"
-
         # Also handle joined forms like 'man6', 'band8' without spaces
         m2 = re.match(r"^(?:man|band)(\d{1,2})$", low_nospace)
         if m2:
             return f"Band {int(m2.group(1))}"
-
         # Keep SEO / SO as-is (if present as standalone uppercase codes)
-        # Tokenize by whitespace and punctuation
-        tokens = re.split(r"[\\s/()_\\-]+", raw.upper())
+        tokens = re.split(r"[\s/()_\-]+", raw.upper())
         if "SEO" in tokens:
             return "SEO"
         if "SO" in tokens and "SEO" not in tokens:
             return "SO"
-
         # Otherwise, keep original trimmed
         return raw
 
@@ -771,7 +896,6 @@ def build_workforce_band_chart(service_name: str, estab_df: pd.DataFrame, estab_
     fig, ax = plt.subplots(figsize=(9.5, 5.5))
     y_pos = np.arange(len(labels))
     bars = ax.barh(y_pos, values, color="#ffda33")
-
     ax.set_title(f"Positions by Classification — {strip_service_code(service_name)}", fontsize=12, pad=8)
     ax.set_xlabel(ylabel)
     ax.set_ylabel("Position Classification")
@@ -838,21 +962,31 @@ def build_workforce_band_chart(service_name: str, estab_df: pd.DataFrame, estab_
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
-
     return chart_img, summary_table
 
 
 def build_budget_chart(service_name: str, budget_df: pd.DataFrame, budget_map: dict):
     if budget_df is None or not budget_map:
         return None, Paragraph("No budget file uploaded.", styles["FieldValue"])
-    svc_col = budget_map.get("service_unit_desc")
-    if not svc_col or svc_col not in budget_df.columns:
-        return None, Paragraph("Budget file is missing 'Service Unit Description' column.", styles["FieldValue"])
+
+    # Build candidate columns (service + team)
+    svc_candidates = []
+    if "service_unit_desc" in budget_map:
+        svc_candidates.append(budget_map["service_unit_desc"])
+    if "team_desc" in budget_map:
+        svc_candidates.append(budget_map["team_desc"])
+    if not svc_candidates:
+        return None, Paragraph("Budget file is missing service/team columns.", styles["FieldValue"])
 
     df = budget_df.copy()
-    df["_svc_clean"] = df[svc_col].astype(str).apply(strip_service_code).str.lower().str.strip()
     key = strip_service_code(service_name).lower().strip()
-    rows = df.loc[df["_svc_clean"] == key].copy()
+
+    # Build combined mask across all candidate columns
+    mask = pd.Series(False, index=df.index)
+    for col in svc_candidates:
+        mask |= df[col].astype(str).apply(strip_service_code).str.lower().str.strip() == key
+
+    rows = df.loc[mask].copy()
     if rows.empty:
         return None, Paragraph("No budget rows found for this service.", styles["FieldValue"])
 
@@ -873,7 +1007,6 @@ def build_budget_chart(service_name: str, budget_df: pd.DataFrame, budget_map: d
     colors_bar = ["#4a90e2", "#4aab6d", "#ff7f50"]
     bars = ax.bar(labels, totals, color=colors_bar)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"${x:,.0f}"))
-
     try:
         ax.bar_label(bars, labels=[f"${v:,.0f}" if np.isfinite(v) else "" for v in totals], padding=3)
     except AttributeError:
@@ -891,6 +1024,7 @@ def build_budget_chart(service_name: str, budget_df: pd.DataFrame, budget_map: d
     ax.grid(axis="y", linestyle="-", alpha=0.3)
     ax.tick_params(axis='x', rotation=0, labelsize=9)
     fig.tight_layout()
+
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=150)
     plt.close(fig)
@@ -926,6 +1060,9 @@ col1, col2 = st.columns(2)
 with col1:
     actions_file = st.file_uploader("Upload Year 2 Actions file (CSV/XLSX)", type=["csv", "xlsx", "xls"], accept_multiple_files=False)
     details_file = st.file_uploader("Upload Service Details file (CSV/XLSX)", type=["csv", "xlsx", "xls"], accept_multiple_files=False)
+    # NEW: KPIs uploader
+    kpis_file = st.file_uploader("Upload KPIs file (CSV/XLSX)", type=["csv", "xlsx", "xls"], accept_multiple_files=False)
+
 with col2:
     estab_file = st.file_uploader("Upload Establishment file (XLSX/CSV)", type=["csv", "xlsx", "xls"], accept_multiple_files=False)
     logo_file = st.file_uploader("Optional: Header/End Page Logo (PNG/JPG)", type=["png", "jpg", "jpeg"], accept_multiple_files=False)
@@ -952,22 +1089,20 @@ with colA:
 with colB:
     save_individual_pdfs = st.checkbox("Save individual PDFs (not just ZIP)", value=False)
 
-# Cover-specific inputs
-st.subheader("Cover Page")
-cover_image_file = st.file_uploader("Cover image (PNG/JPG)", type=["png", "jpg", "jpeg"], accept_multiple_files=False)
-cover_footer_logo_file = st.file_uploader("Optional: Footer logo on banner (PNG/JPG)", type=["png", "jpg", "jpeg"], accept_multiple_files=False)
-
-cover_service_name_override = st.text_input(
-    "Specific service name for cover (override)",
-    value="",
-    help="Enter exact service name to show on the cover (e.g., 'Business Enablement')."
-)
-
-interpreter_block_text = st.text_area(
-    "Interpreter block text (optional)",
-    value="Interpreter service\n9840 9355\n普通话 \n 繁體字 \n Ελληνικά\nItaliano \n हिंदी \n فارسی",
-    height=250
-)
+# Cover-specific inputs (currently disabled in your file)
+# st.subheader("Cover Page")
+# cover_image_file = st.file_uploader("Cover image (PNG/JPG)", type=["png", "jpg", "jpeg"], accept_multiple_files=False)
+# cover_footer_logo_file = st.file_uploader("Optional: Footer logo on banner (PNG/JPG)", type=["png", "jpg", "jpeg"], accept_multiple_files=False)
+# cover_service_name_override = st.text_input(
+#     "Specific service name for cover (override)",
+#     value="",
+#     help="Enter exact service name to show on the cover (e.g., 'Business Enablement')."
+# )
+# interpreter_block_text = st.text_area(
+#     "Interpreter block text (optional)",
+#     value="Interpreter service\n9840 9355\n普通话 \n 繁體字 \n Ελληνικά\nItaliano \n हिंदी \n فارسی",
+#     height=250
+# )
 
 st.divider()
 
@@ -977,7 +1112,9 @@ st.divider()
 service_options_display = []
 service_key_series = None
 actions_df = details_df = estab_df = budget_df = None
+kpis_df = None
 actions_map = details_map = estab_map = budget_map = None
+kpis_map = None
 details_lookup = {}
 
 core_files_ready = actions_file and details_file and estab_file
@@ -990,6 +1127,13 @@ if core_files_ready:
 
         details_df = read_table(details_file).fillna("")
         estab_df = read_table(estab_file).fillna("")
+
+        # Optional KPIs
+        if kpis_file:
+            kpis_df = read_table(kpis_file).fillna("")
+            # --- NEW: strip " and [] from KPI text cells
+            kpis_df = kpis_df.applymap(_clean_kpi_text_cell)
+
     except Exception as e:
         st.error(f"Failed to read uploaded files: {e}")
         st.stop()
@@ -999,7 +1143,12 @@ if core_files_ready:
     details_map, details_missing = build_column_map(details_df, EXPECTED_DETAILS)
     estab_map, estab_missing = build_column_map(estab_df, EXPECTED_ESTAB)
 
-    # ---- Post-map normalisation: second line of defence
+    # KPIs map (optional; only validate if a file is uploaded)
+    kpis_missing = []
+    if kpis_df is not None:
+        kpis_map, kpis_missing = build_column_map(kpis_df, EXPECTED_KPIS)
+
+    # ---- Post-map normalisation: second line of defence for Actions
     try:
         _atype_col = actions_map.get("action_type")
         if _atype_col:
@@ -1018,25 +1167,35 @@ if core_files_ready:
             budget_df = None
             budget_map = None
 
-    if actions_missing or details_missing or estab_missing or budget_missing:
+    if actions_missing or details_missing or estab_missing or (kpis_df is not None and kpis_missing) or budget_missing:
         st.error("Some required columns were not found. Please fix the source files.")
         with st.expander("Missing columns detail"):
             if actions_missing:
                 st.write("**Actions file:**")
                 st.code(" - " + "\n - ".join(actions_missing))
                 st.write(f"Found columns: {', '.join(map(str, actions_df.columns))}")
+
             if details_missing:
                 st.write("**Service Details file:**")
                 st.code(" - " + "\n - ".join(details_missing))
                 st.write(f"Found columns: {', '.join(map(str, details_df.columns))}")
+
             if estab_missing:
                 st.write("**Establishment file:**")
                 st.code(" - " + "\n - ".join(estab_missing))
                 st.write(f"Found columns: {', '.join(map(str, estab_df.columns))}")
+
+            if kpis_df is not None and kpis_missing:
+                st.write("**KPIs file:**")
+                st.code(" - " + "\n - ".join(kpis_missing))
+                st.write(f"Found columns: {', '.join(map(str, kpis_df.columns))}")
+
             if budget_file and budget_missing:
                 st.write("**Budget file:**")
                 st.code(" - " + "\n - ".join(budget_missing))
                 st.write(f"Found columns: {', '.join(map(str, budget_df.columns))}")
+
+        # Hard-stop only if Actions/Details/Estab missing (core). KPI and Budget are optional.
         if actions_missing or details_missing or estab_missing:
             st.stop()
 
@@ -1051,6 +1210,7 @@ if core_files_ready:
         .replace("", "Unknown Service")
     )
     service_key_series = service_series_norm.str.lower()
+
     key_to_display = {}
     for raw, key in zip(service_series_raw, service_key_series):
         if key not in key_to_display:
@@ -1074,13 +1234,22 @@ if core_files_ready:
     # Budget preview (independent palette)
     if budget_df is not None and budget_map and selected_services:
         preview_service = selected_services[0]
-        svc_col = budget_map.get("service_unit_desc")
-        if svc_col in budget_df.columns:
+        # Build candidate columns (service + team)
+        svc_candidates = []
+        if "service_unit_desc" in budget_map:
+            svc_candidates.append(budget_map["service_unit_desc"])
+        if "team_desc" in budget_map:
+            svc_candidates.append(budget_map["team_desc"])
+        if svc_candidates:
             df_prev = budget_df.copy()
-            df_prev["_svc_clean"] = df_prev[svc_col].astype(str).apply(strip_service_code).str.lower().str.strip()
             match_key = strip_service_code(preview_service).lower().strip()
-            rows_prev = df_prev.loc[df_prev["_svc_clean"] == match_key].copy()
+            # Build combined mask across all candidate columns
+            mask = pd.Series(False, index=df_prev.index)
+            for col in svc_candidates:
+                mask |= df_prev[col].astype(str).apply(strip_service_code).str.lower().str.strip() == match_key
+            rows_prev = df_prev.loc[mask].copy()
             if not rows_prev.empty:
+                # Convert budget columns to numeric
                 for c in [budget_map.get("budget_2627"), budget_map.get("budget_2728"), budget_map.get("budget_2829")]:
                     rows_prev[c] = pd.to_numeric(rows_prev[c], errors="coerce")
                 values = [
@@ -1089,6 +1258,8 @@ if core_files_ready:
                     float(rows_prev[budget_map["budget_2829"]].sum()),
                 ]
                 labels = ["2026-27 Final Budget", "2027-28 Final Budget", "2028-29 Final Budget"]
+
+                # Plot preview chart
                 fig, ax = plt.subplots(figsize=(6, 4))
                 bars = ax.bar(labels, values, color=["#4a90e2", "#4aab6d", "#ff7f50"])
                 ax.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"${x:,.0f}"))
@@ -1099,8 +1270,8 @@ if core_files_ready:
                         if np.isfinite(v):
                             x = bar.get_x() + bar.get_width() / 2
                             y = bar.get_height()
-                            ax.text(x, y + (0.01 * max(values) if max(values) > 0 else 0.1),
-                                    f"${v:,.0f}", ha="center", va="bottom")
+                            ax.text(x, y + (0.03 * max(values)),
+                                    f"${v:,.0f}", ha="center", va="bottom", clip_on=False)
                 ax.set_title(f"Budget (Preview): {strip_service_code(preview_service)}")
                 ax.set_ylabel("Amount")
                 ax.grid(axis="y", linestyle="-", alpha=0.5)
@@ -1108,7 +1279,7 @@ if core_files_ready:
             else:
                 st.info("No budget rows found for the selected service.")
         else:
-            st.info("Budget file is missing 'Service Unit Description' column.")
+            st.info("Budget file is missing service/team columns.")
 else:
     selected_services = []
 
@@ -1120,14 +1291,15 @@ if generate_btn:
     if not (actions_df is not None and details_df is not None and estab_df is not None):
         st.error("Please upload Actions, Details, and Establishment files first.")
         st.stop()
+
     if not selected_services:
         st.warning("Please select at least one service to generate.")
         st.stop()
 
     # Read optional assets
     logo_bytes = logo_file.read() if logo_file else None
-    cover_image_bytes = cover_image_file.read() if cover_image_file else None
-    footer_logo_bytes = cover_footer_logo_file.read() if cover_footer_logo_file else None
+    # cover_image_bytes = cover_image_file.read() if cover_image_file else None
+    # footer_logo_bytes = cover_footer_logo_file.read() if cover_footer_logo_file else None
 
     display_to_key = {}
     service_series_raw = actions_df[actions_map["service"]].astype(str)
@@ -1140,12 +1312,29 @@ if generate_btn:
         .replace("", "Unknown Service")
     )
     key_series = service_series_norm.str.lower()
+
     for raw, key in zip(service_series_raw, key_series):
         disp = raw if raw.strip() else "Unknown Service"
         if disp not in display_to_key:
             display_to_key[disp] = key
 
     selected_keys = [display_to_key[s] for s in selected_services if s in display_to_key]
+
+    # If KPIs are present, prep a normalized key series for KPI table as well
+    if kpis_df is not None and kpis_map and "service" in kpis_map:
+        kpi_service_raw = kpis_df[kpis_map["service"]].astype(str)
+        kpi_service_norm = (
+            kpi_service_raw
+            .str.replace("\u00A0", " ", regex=False)
+            .str.replace("\t", " ", regex=False)
+            .str.strip()
+            .str.replace(r"\s+", " ", regex=True)
+            .replace("", "Unknown Service")
+        )
+        kpi_key_series = kpi_service_norm.str.lower()
+    else:
+        kpi_key_series = None
+
     zip_buffer = io.BytesIO()
     generated_count = 0
 
@@ -1162,26 +1351,28 @@ if generate_btn:
             )
 
             # Specific cover service name (override if provided)
-            cover_service_name = cover_service_name_override.strip() if cover_service_name_override.strip() else display_service
-            safe_service = safe_filename(display_service)
+            # cover_service_name = cover_service_name_override.strip() if cover_service_name_override.strip() else display_service
 
+            safe_service = safe_filename(display_service)
             elements = []
-            # Cover Page
-            elements.extend(
-                build_cover_page(
-                    service_name=cover_service_name,
-                    year_label=year_label,
-                    header_color=PRIMARY_HEADER,
-                    cover_image_bytes=cover_image_bytes,
-                    footer_logo_bytes=footer_logo_bytes,
-                    interpreter_block_text=interpreter_block_text.strip() if interpreter_block_text else None
-                )
-            )
-            elements.append(PageBreak())
+
+            # # Cover Page
+            # elements.extend(
+            #     build_cover_page(
+            #         service_name=cover_service_name,
+            #         year_label=year_label,
+            #         header_color=PRIMARY_HEADER,
+            #         cover_image_bytes=cover_image_bytes,
+            #         footer_logo_bytes=footer_logo_bytes,
+            #         interpreter_block_text=interpreter_block_text.strip() if interpreter_block_text else None
+            #     )
+            # )
+            # elements.append(PageBreak())
 
             # Page 1: Service Details
             elements.append(build_header_details(display_service, logo_bytes, year_label, PRIMARY_HEADER))
             elements.append(Spacer(1, 8))
+
             details_row = details_lookup.get(key)
             if details_row is not None:
                 elements.append(service_details_card(details_row, details_map, PRIMARY_HEADER))
@@ -1217,6 +1408,7 @@ if generate_btn:
             # Actions pages
             elements.append(build_header_actions(display_service, logo_bytes, year_label, PRIMARY_HEADER))
             elements.append(Spacer(1, 8))
+
             card_count = 0
             for _, r in service_df_actions.iterrows():
                 elements.append(
@@ -1237,6 +1429,41 @@ if generate_btn:
                     elements.append(PageBreak())
                     elements.append(build_header_actions(display_service, logo_bytes, year_label, PRIMARY_HEADER))
                     elements.append(Spacer(1, 8))
+
+            # KPI pages (optional; printed after Actions)
+            if kpis_df is not None and kpis_map and kpi_key_series is not None:
+                kpi_mask = (kpi_key_series == key)
+                service_df_kpis = kpis_df.loc[kpi_mask].copy()
+                if not service_df_kpis.empty:
+                    elements.append(PageBreak())
+                    elements.append(build_header_kpis(display_service, logo_bytes, year_label, PRIMARY_HEADER))
+                    elements.append(Spacer(1, 8))
+
+                    kpi_card_count = 0
+                    for _, kr in service_df_kpis.iterrows():
+                        elements.append(
+                            create_kpi_card(
+                                kr.get(kpis_map.get("service", ""), ""),
+                                kr.get(kpis_map.get("sub_service", ""), ""),
+                                kr.get(kpis_map.get("kpi_name", ""), ""),
+                                kr.get(kpis_map.get("kpi_category", ""), ""),
+                                kr.get(kpis_map.get("unit", ""), ""),
+                                kr.get(kpis_map.get("frequency", ""), ""),
+                                kr.get(kpis_map.get("target_2627", ""), ""),
+                                kr.get(kpis_map.get("target", ""), ""),
+                                kr.get(kpis_map.get("links", ""), ""),
+                                kr.get(kpis_map.get("notes", ""), ""),
+                                kr.get(kpis_map.get("smart", ""), ""),
+                                kr.get(kpis_map.get("officer", ""), ""),
+                                PRIMARY_HEADER
+                            )
+                        )
+                        elements.append(Spacer(1, 6))
+                        kpi_card_count += 1
+                        if cards_per_page and kpi_card_count % cards_per_page == 0:
+                            elements.append(PageBreak())
+                            elements.append(build_header_kpis(display_service, logo_bytes, year_label, PRIMARY_HEADER))
+                            elements.append(Spacer(1, 8))
 
             # End page
             elements.extend(build_end_page(display_service, year_label, PRIMARY_HEADER, logo_bytes))
@@ -1260,6 +1487,7 @@ if generate_btn:
                 pdf_out_path = os.path.join(downloads_dir, out_name)
                 with open(pdf_out_path, "wb") as f:
                     f.write(pdf_bytes)
+
             generated_count += 1
 
     zip_buffer.seek(0)
@@ -1274,6 +1502,7 @@ if generate_btn:
         st.info(f"ZIP saved to: {zip_out_path}")
 
     st.success(f"Generated {generated_count} PDF(s) for the selected services.")
+
     st.download_button(
         label="Download ZIP of selected service PDFs",
         data=zip_buffer.getvalue(),
