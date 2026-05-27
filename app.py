@@ -153,7 +153,7 @@ EXPECTED_KPIS = {
     "links": ["Links", "Link", "URL"],
     "notes": ["Notes", "Comments"],
     "smart": ["SMART Checklist", "SMART"],
-    "officer": ["Reporting Officer", "Owner", "Lead"],
+    "officer": ["Reporting person", "Owner", "Lead"],
     # Optional confirmation column to include only approved KPIs
     "confirm": ["Confirm KPI", "Confirmed", "Include", "Publish"]
 }
