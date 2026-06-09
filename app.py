@@ -403,7 +403,7 @@ def build_header_actions(service_name: str, logo_bytes: bytes or None, year_labe
 # NEW: KPI header
 def build_header_kpis(service_name: str, logo_bytes: bytes or None, year_label: str, header_color):
     return build_header_generic(
-        f"<b>Service Plan KPI's</b>: <b>{esc_text(service_name)}</b>",
+        f"<b>Service Plan KPIs</b>: <b>{esc_text(service_name)}</b>",
         f"Key performance indicators \n {esc_text(year_label)}",
         header_color,
         logo_bytes
