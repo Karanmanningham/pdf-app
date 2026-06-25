@@ -394,7 +394,7 @@ def build_header_workforce(service_name: str, logo_bytes: bytes or None, year_la
 def build_header_actions(service_name: str, logo_bytes: bytes or None, year_label: str, header_color):
     return build_header_generic(
         f"<b>Service Action Plan</b>: <b>{esc_text(service_name)}</b>",
-        f"Actions for next year \n {esc_text(year_label)}",
+        f"Actions for  \n {esc_text(year_label)}",
         header_color,
         logo_bytes
     )
